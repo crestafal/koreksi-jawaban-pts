@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deteksi Jawaban</title>
-  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
   <style>
     body { 
       font-family: sans-serif; 
@@ -83,6 +83,38 @@
       border: 1px solid #ddd;
       background: white;
     }
+    .layout-preview {
+      margin: 1rem 0;
+      border: 1px solid #ddd;
+      padding: 1rem;
+      background: white;
+      display: flex;
+      justify-content: space-around;
+    }
+    .layout-section {
+      text-align: center;
+    }
+    .layout-grid {
+      margin-top: 0.5rem;
+    }
+    .layout-row {
+      display: flex;
+      margin-bottom: 0.3rem;
+      align-items: center;
+    }
+    .layout-number {
+      width: 30px;
+      text-align: right;
+      margin-right: 10px;
+    }
+    .layout-circle {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #333;
+      border-radius: 50%;
+      margin: 0 5px;
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
@@ -92,11 +124,63 @@
     <div class="instruction">
       <h3>Instruksi Penggunaan:</h3>
       <ol>
-        <li>Pastikan lembar jawaban terlihat jelas di dalam frame kamera</li>
-        <li>Arahkan kamera agar seluruh area jawaban terlihat dan tidak terpotong</li>
+        <li>Arahkan kamera ke lembar jawaban dengan kotak biru yang berisi jawaban</li>
+        <li>Pastikan area dalam kotak biru terlihat jelas dan tidak terpotong</li>
         <li>Pastikan pencahayaan cukup terang dan merata</li>
         <li>Klik "Cek Jawaban" untuk memproses</li>
       </ol>
+      <p><strong>Format Lembar Jawaban:</strong></p>
+      <ul>
+        <li>Pilihan Ganda: Nomor 1-15 (1-5 kolom kiri, 6-10 kolom tengah, 11-15 kolom kanan)</li>
+        <li>Benar/Salah: Nomor 1-5 dengan pilihan B (Benar) atau S (Salah)</li>
+        <li>Menjodohkan: Nomor 1-5 dengan pilihan A-H</li>
+      </ul>
+    </div>
+
+    <div class="layout-preview">
+      <div class="layout-section">
+        <h4>Pilihan Ganda</h4>
+        <div class="layout-grid">
+          <div class="layout-row">
+            <span class="layout-number">1</span>
+            <span class="layout-circle" title="A"></span>
+            <span class="layout-circle" title="B"></span>
+            <span class="layout-circle" title="C"></span>
+            <span class="layout-circle" title="D"></span>
+          </div>
+          <div style="text-align: center; font-size: 12px;">... (sampai nomor 15)</div>
+        </div>
+      </div>
+      
+      <div class="layout-section">
+        <h4>Benar/Salah</h4>
+        <div class="layout-grid">
+          <div class="layout-row">
+            <span class="layout-number">1</span>
+            <span class="layout-circle" title="B"></span>
+            <span class="layout-circle" title="S"></span>
+          </div>
+          <div style="text-align: center; font-size: 12px;">... (sampai nomor 5)</div>
+        </div>
+      </div>
+      
+      <div class="layout-section">
+        <h4>Menjodohkan</h4>
+        <div class="layout-grid">
+          <div class="layout-row">
+            <span class="layout-number">1</span>
+            <span class="layout-circle" title="A"></span>
+            <span class="layout-circle" title="B"></span>
+            <span class="layout-circle" title="C"></span>
+            <span class="layout-circle" title="D"></span>
+            <span class="layout-circle" title="E"></span>
+            <span class="layout-circle" title="F"></span>
+            <span class="layout-circle" title="G"></span>
+            <span class="layout-circle" title="H"></span>
+          </div>
+          <div style="text-align: center; font-size: 12px;">... (sampai nomor 5)</div>
+        </div>
+      </div>
     </div>
 
     <video id="kamera" autoplay playsinline></video>
@@ -131,30 +215,73 @@
     let currentStream = null;
     let cameraMode = 'environment';
 
-    // Layout configuration with better positioning
+    // Layout configuration sesuai dengan format lembar jawaban
     const layoutKotak = {
       pilihanGanda: Array.from({ length: 15 }, (_, i) => {
-        const baseY = 100 + i * 35;
+        const startX = 120; // Posisi awal horizontal
+        const startY = 320; // Posisi awal vertikal (disesuaikan dengan gambar)
+        const jarakHorizontal = 35; // Jarak antar kolom (A, B, C, D)
+        const jarakVertikal = 32; // Jarak antar baris (1, 2, 3, dst)
+        const radius = 10; // Radius lingkaran
+        
+        // Baris 1-5 di kolom kiri
+        if (i < 5) {
+          const baseY = startY + i * jarakVertikal;
+          return [
+            { x: startX, y: baseY, radius: radius }, // A
+            { x: startX + jarakHorizontal, y: baseY, radius: radius }, // B
+            { x: startX + jarakHorizontal * 2, y: baseY, radius: radius }, // C
+            { x: startX + jarakHorizontal * 3, y: baseY, radius: radius } // D
+          ];
+        }
+        
+        // Baris 6-10 di kolom tengah
+        if (i < 10) {
+          const baseY = startY + (i - 5) * jarakVertikal;
+          const offsetX = 280; // Offset untuk kolom tengah
+          return [
+            { x: offsetX, y: baseY, radius: radius }, // A
+            { x: offsetX + jarakHorizontal, y: baseY, radius: radius }, // B
+            { x: offsetX + jarakHorizontal * 2, y: baseY, radius: radius }, // C
+            { x: offsetX + jarakHorizontal * 3, y: baseY, radius: radius } // D
+          ];
+        }
+        
+        // Baris 11-15 di kolom kanan
+        const baseY = startY + (i - 10) * jarakVertikal;
+        const offsetX = 440; // Offset untuk kolom kanan
         return [
-          { x: 120, y: baseY, radius: 15 },
-          { x: 160, y: baseY, radius: 15 },
-          { x: 200, y: baseY, radius: 15 },
-          { x: 240, y: baseY, radius: 15 }
+          { x: offsetX, y: baseY, radius: radius }, // A
+          { x: offsetX + jarakHorizontal, y: baseY, radius: radius }, // B
+          { x: offsetX + jarakHorizontal * 2, y: baseY, radius: radius }, // C
+          { x: offsetX + jarakHorizontal * 3, y: baseY, radius: radius } // D
         ];
       }),
 
       benarSalah: Array.from({ length: 5 }, (_, i) => {
-        const baseY = 650 + i * 35;
+        const startX = 120; // Posisi awal horizontal untuk Benar/Salah
+        const startY = 520; // Posisi awal vertikal
+        const jarakHorizontal = 35; // Jarak antar kolom
+        const jarakVertikal = 32; // Jarak antar baris
+        const radius = 10;
+        
+        const baseY = startY + i * jarakVertikal;
         return [
-          { x: 100, y: baseY, radius: 15 },
-          { x: 140, y: baseY, radius: 15 }
+          { x: startX, y: baseY, radius: radius }, // B
+          { x: startX + jarakHorizontal, y: baseY, radius: radius } // S
         ];
       }),
 
       menjodohkan: Array.from({ length: 5 }, (_, i) => {
-        const baseY = 650 + i * 35;
+        const startX = 280; // Posisi awal horizontal untuk menjodohkan
+        const startY = 520; // Sama dengan Benar/Salah
+        const jarakHorizontal = 30; // Jarak antar kolom (A-H)
+        const jarakVertikal = 32; // Jarak antar baris
+        const radius = 10;
+        
+        const baseY = startY + i * jarakVertikal;
         return Array.from({ length: 8 }, (_, j) => {
-          return { x: 320 + j * 35, y: baseY, radius: 12 };
+          return { x: startX + j * jarakHorizontal, y: baseY, radius: radius };
         });
       })
     };
@@ -221,12 +348,61 @@
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
+      // Draw section labels
+      ctx.font = '14px Arial';
+      ctx.fillStyle = 'blue';
+      ctx.fillText('I. PILIHAN GANDA', 100, 300);
+      ctx.fillText('II. BENAR/SALAH', 100, 500);
+      ctx.fillText('III. MENJODOHKAN', 270, 500);
+      
+      // Draw column headers for Pilihan Ganda
+      // Kolom kiri (1-5)
+      for (let i = 1; i <= 5; i++) {
+        ctx.fillText(i.toString(), 90, 320 + (i - 1) * 32);
+      }
+      ['A', 'B', 'C', 'D'].forEach((label, j) => {
+        ctx.fillText(label, 117 + j * 35, 308);
+      });
+      
+      // Kolom tengah (6-10)
+      for (let i = 6; i <= 10; i++) {
+        ctx.fillText(i.toString(), 250, 320 + (i - 6) * 32);
+      }
+      ['A', 'B', 'C', 'D'].forEach((label, j) => {
+        ctx.fillText(label, 277 + j * 35, 308);
+      });
+      
+      // Kolom kanan (11-15)
+      for (let i = 11; i <= 15; i++) {
+        ctx.fillText(i.toString(), 410, 320 + (i - 11) * 32);
+      }
+      ['A', 'B', 'C', 'D'].forEach((label, j) => {
+        ctx.fillText(label, 437 + j * 35, 308);
+      });
+      
+      // Draw headers for Benar/Salah
+      for (let i = 1; i <= 5; i++) {
+        ctx.fillText(i.toString(), 90, 520 + (i - 1) * 32);
+      }
+      ['B', 'S'].forEach((label, j) => {
+        ctx.fillText(label, 117 + j * 35, 508);
+      });
+      
+      // Draw headers for Menjodohkan
+      for (let i = 1; i <= 5; i++) {
+        ctx.fillText(i.toString(), 250, 520 + (i - 1) * 32);
+      }
+      ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach((label, j) => {
+        ctx.fillText(label, 277 + j * 30, 508);
+      });
+      
+      // Draw circles for detection areas
       Object.values(kotakArray).forEach(soalGroup => {
         soalGroup.forEach(opsiGroup => {
           opsiGroup.forEach(pos => {
             ctx.beginPath();
             ctx.arc(pos.x, pos.y, pos.radius, 0, 2 * Math.PI);
-            ctx.strokeStyle = '#ff0000';
+            ctx.strokeStyle = '#0000ff'; // Warna biru
             ctx.lineWidth = 2;
             ctx.stroke();
           });
@@ -236,6 +412,11 @@
 
     // Ambil snapshot dan proses
     function ambilSnapshot() {
+      if (!opencvReady) {
+        updateStatus('OpenCV belum siap, mohon tunggu...');
+        return;
+      }
+      
       try {
         const video = document.getElementById('kamera');
         const canvas = document.getElementById('snapshot');
@@ -265,7 +446,7 @@
                            cv.THRESH_BINARY_INV, 11, 2);
         
         // Threshold untuk deteksi kotak hitam
-        const thresholdHitam = 150;
+        const thresholdHitam = 100; // Turunkan threshold untuk deteksi yang lebih sensitif
 
         // Function to detect answers
         const deteksi = (kotakArray, opsiPerSoal) =>
@@ -360,10 +541,15 @@
       }
     }
 
+    // Global OpenCV ready flag
+    let opencvReady = false;
+
     // OpenCV ready callback
     function onOpenCvReady() {
+      opencvReady = true;
       document.getElementById('cekJawabanBtn').disabled = false;
       updateStatus('OpenCV siap digunakan');
+      console.log('OpenCV.js is ready');
     }
 
     // Initialize
@@ -372,10 +558,17 @@
       initCamera();
     });
 
-    // Check if OpenCV is ready
-    if (typeof cv !== 'undefined') {
-      onOpenCvReady();
+    // Wait for OpenCV to load
+    function waitForOpenCv() {
+      if (typeof cv !== 'undefined' && cv.imread) {
+        onOpenCvReady();
+      } else {
+        setTimeout(waitForOpenCv, 100);
+      }
     }
+
+    // Start checking for OpenCV
+    waitForOpenCv();
   </script>
 </body>
 </html>
