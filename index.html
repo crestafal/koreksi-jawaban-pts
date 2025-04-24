@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deteksi Jawaban</title>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <style>
+    body { 
+      font-family: sans-serif; 
+      text-align: center; 
+      padding: 1rem; 
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    video, canvas { 
+      width: 100%; 
+      max-width: 640px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    #hasil { 
+      margin-top: 1rem; 
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #2563eb;
+    }
+    .input-kunci { 
+      width: 100%; 
+      max-width: 640px; 
+      margin: 2rem auto; 
+      text-align: left; 
+    }
+    textarea { 
+      width: 100%; 
+      height: 60px; 
+      margin: 0.5rem 0 1rem;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-family: monospace;
+    }
+    button {
+      padding: 0.8rem 1.5rem;
+      margin: 0.5rem;
+      border: none;
+      border-radius: 5px;
+      background-color: #2563eb;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    button:disabled {
+      background-color: #9ca3af;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 1rem;
+      padding: 0.5rem;
+      border-radius: 5px;
+      background-color: #e5e7eb;
+    }
+    .instruction {
+      background-color: #f3f4f6;
+      padding: 1rem;
+      border-radius: 8px;
+      margin: 1rem 0;
+      text-align: left;
+    }
+    canvas#visualizer {
+      margin-top: 1rem;
+      border: 1px solid #ddd;
+      background: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Deteksi Jawaban Siswa</h1>
+    
+    <div class="instruction">
+      <h3>Instruksi Penggunaan:</h3>
+      <ol>
+        <li>Pastikan lembar jawaban terlihat jelas di dalam frame kamera</li>
+        <li>Arahkan kamera agar seluruh area jawaban terlihat dan tidak terpotong</li>
+        <li>Pastikan pencahayaan cukup terang dan merata</li>
+        <li>Klik "Cek Jawaban" untuk memproses</li>
+      </ol>
+    </div>
+
+    <video id="kamera" autoplay playsinline></video>
+    <canvas id="snapshot" style="display:none;"></canvas>
+    <canvas id="visualizer"></canvas>
+    
+    <div>
+      <button onclick="ambilSnapshot()" id="cekJawabanBtn" disabled>Cek Jawaban</button>
+      <button onclick="toggleCamera()" id="toggleCameraBtn">Ganti Kamera</button>
+    </div>
+    
+    <div id="hasil">Menunggu input...</div>
+    <div id="status" class="status">Status: Memuat OpenCV...</div>
+
+    <div class="input-kunci">
+      <h3>Edit Kunci Jawaban</h3>
+      <label for="kunciPG">Pilihan Ganda (format: 1B 2A ...)</label>
+      <textarea id="kunciPG">1B 2B 3A 4C 5C 6D 7A 8B 9B 10C 11A 12A 13B 14D 15A</textarea>
+
+      <label for="kunciBS">Benar / Salah (format: B B B S S)</label>
+      <textarea id="kunciBS">B B B S S</textarea>
+
+      <label for="kunciMJ">Menjodohkan (format: B C G F D)</label>
+      <textarea id="kunciMJ">B C G F D</textarea>
+
+      <button onclick="updateKunciJawaban()">Simpan Kunci</button>
+    </div>
+  </div>
+
+  <script>
+    // Global variables
+    let currentStream = null;
+    let cameraMode = 'environment';
+
+    // Layout configuration with better positioning
+    const layoutKotak = {
+      pilihanGanda: Array.from({ length: 15 }, (_, i) => {
+        const baseY = 100 + i * 35;
+        return [
+          { x: 120, y: baseY, radius: 15 },
+          { x: 160, y: baseY, radius: 15 },
+          { x: 200, y: baseY, radius: 15 },
+          { x: 240, y: baseY, radius: 15 }
+        ];
+      }),
+
+      benarSalah: Array.from({ length: 5 }, (_, i) => {
+        const baseY = 650 + i * 35;
+        return [
+          { x: 100, y: baseY, radius: 15 },
+          { x: 140, y: baseY, radius: 15 }
+        ];
+      }),
+
+      menjodohkan: Array.from({ length: 5 }, (_, i) => {
+        const baseY = 650 + i * 35;
+        return Array.from({ length: 8 }, (_, j) => {
+          return { x: 320 + j * 35, y: baseY, radius: 12 };
+        });
+      })
+    };
+
+    // Kunci jawaban
+    let kunciJawaban = {
+      pg: [],
+      bs: [],
+      mj: []
+    };
+
+    // Update kunci jawaban
+    function updateKunciJawaban() {
+      const pgInput = document.getElementById('kunciPG').value.trim();
+      const bsInput = document.getElementById('kunciBS').value.trim();
+      const mjInput = document.getElementById('kunciMJ').value.trim();
+
+      kunciJawaban.pg = pgInput.split(/\s+/).map(pair => pair.slice(-1).toUpperCase());
+      kunciJawaban.bs = bsInput.split(/\s+/).map(c => c.toUpperCase());
+      kunciJawaban.mj = mjInput.split(/\s+/).map(c => c.toUpperCase());
+
+      updateStatus('Kunci jawaban diperbarui!');
+    }
+
+    // Update status message
+    function updateStatus(message) {
+      document.getElementById('status').textContent = `Status: ${message}`;
+    }
+
+    // Initialize camera
+    function initCamera() {
+      const constraints = {
+        video: {
+          facingMode: cameraMode,
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+          if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+          }
+          currentStream = stream;
+          const video = document.getElementById('kamera');
+          video.srcObject = stream;
+          updateStatus('Kamera siap');
+        })
+        .catch(err => {
+          updateStatus('Error: ' + err.message);
+          console.error('Camera error:', err);
+        });
+    }
+
+    // Toggle camera
+    function toggleCamera() {
+      cameraMode = cameraMode === 'environment' ? 'user' : 'environment';
+      initCamera();
+    }
+
+    // Visualize detection areas
+    function visualizeDetection(canvas, kotakArray) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      Object.values(kotakArray).forEach(soalGroup => {
+        soalGroup.forEach(opsiGroup => {
+          opsiGroup.forEach(pos => {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, pos.radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          });
+        });
+      });
+    }
+
+    // Ambil snapshot dan proses
+    function ambilSnapshot() {
+      try {
+        const video = document.getElementById('kamera');
+        const canvas = document.getElementById('snapshot');
+        const visualizer = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas dimensions
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        visualizer.width = video.videoWidth;
+        visualizer.height = video.videoHeight;
+        
+        // Draw video frame to canvas
+        ctx.drawImage(video, 0, 0);
+        
+        // Visualize detection areas
+        visualizeDetection(visualizer, layoutKotak);
+        
+        // Process with OpenCV
+        const src = cv.imread(canvas);
+        const gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        
+        // Adaptive threshold untuk deteksi lebih baik
+        const thresh = new cv.Mat();
+        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                           cv.THRESH_BINARY_INV, 11, 2);
+        
+        // Threshold untuk deteksi kotak hitam
+        const thresholdHitam = 150;
+
+        // Function to detect answers
+        const deteksi = (kotakArray, opsiPerSoal) =>
+          kotakArray.map(kotak => {
+            let idx = -1;
+            let maxBlack = 0;
+            
+            kotak.forEach((pos, i) => {
+              const radius = pos.radius || 12;
+              const size = radius * 2;
+              const startX = Math.max(0, pos.x - radius);
+              const startY = Math.max(0, pos.y - radius);
+              
+              // Ensure ROI is within bounds
+              const roiWidth = Math.min(size, thresh.cols - startX);
+              const roiHeight = Math.min(size, thresh.rows - startY);
+              
+              if (roiWidth > 0 && roiHeight > 0) {
+                const roi = thresh.roi(new cv.Rect(startX, startY, roiWidth, roiHeight));
+                const jumlahHitam = cv.countNonZero(roi);
+                roi.delete();
+                
+                // Select the option with most black pixels
+                if (jumlahHitam > thresholdHitam && jumlahHitam > maxBlack) {
+                  maxBlack = jumlahHitam;
+                  idx = i;
+                }
+              }
+            });
+            
+            return idx >= 0 ? String.fromCharCode(65 + idx) : "-";
+          });
+
+        // Detect answers
+        const jawabanSiswa = {
+          pg: deteksi(layoutKotak.pilihanGanda, 4),
+          bs: deteksi(layoutKotak.benarSalah, 2),
+          mj: deteksi(layoutKotak.menjodohkan, 8)
+        };
+
+        // Calculate score
+        let benar = 0;
+        let totalSoal = 0;
+        
+        // Check Pilihan Ganda
+        jawabanSiswa.pg.forEach((j, i) => {
+          if (i < kunciJawaban.pg.length) {
+            totalSoal++;
+            if (j === kunciJawaban.pg[i]) benar++;
+          }
+        });
+        
+        // Check Benar/Salah
+        jawabanSiswa.bs.forEach((j, i) => {
+          if (i < kunciJawaban.bs.length) {
+            totalSoal++;
+            const jawaban = j === 'A' ? 'B' : j === 'B' ? 'S' : '-';
+            if (jawaban === kunciJawaban.bs[i]) benar++;
+          }
+        });
+        
+        // Check Menjodohkan
+        jawabanSiswa.mj.forEach((j, i) => {
+          if (i < kunciJawaban.mj.length) {
+            totalSoal++;
+            if (j === kunciJawaban.mj[i]) benar++;
+          }
+        });
+
+        // Calculate percentage
+        const nilai = totalSoal > 0 ? Math.round((benar / totalSoal) * 100) : 0;
+        
+        // Display results
+        document.getElementById('hasil').innerHTML = `
+          Skor: ${benar} dari ${totalSoal} soal<br>
+          Nilai: ${nilai}%<br>
+          <small>PG: ${jawabanSiswa.pg.join(', ')}</small><br>
+          <small>BS: ${jawabanSiswa.bs.map(j => j === 'A' ? 'B' : j === 'B' ? 'S' : '-').join(', ')}</small><br>
+          <small>MJ: ${jawabanSiswa.mj.join(', ')}</small>
+        `;
+        
+        updateStatus('Deteksi selesai');
+        
+        // Clean up
+        src.delete();
+        gray.delete();
+        thresh.delete();
+        
+      } catch (error) {
+        console.error('Error:', error);
+        updateStatus('Error: ' + error.message);
+      }
+    }
+
+    // OpenCV ready callback
+    function onOpenCvReady() {
+      document.getElementById('cekJawabanBtn').disabled = false;
+      updateStatus('OpenCV siap digunakan');
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      updateKunciJawaban();
+      initCamera();
+    });
+
+    // Check if OpenCV is ready
+    if (typeof cv !== 'undefined') {
+      onOpenCvReady();
+    }
+  </script>
+</body>
+</html>
