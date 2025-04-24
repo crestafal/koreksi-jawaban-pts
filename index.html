@@ -5,11 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deteksi Jawaban</title>
   <script>
+    let cvLoaded = false;
+    
     function onOpenCvReady() {
       console.log('OpenCV.js is ready');
+      cvLoaded = true;
+      if (document.getElementById('cekJawabanBtn')) {
+        document.getElementById('cekJawabanBtn').disabled = false;
+        document.getElementById('status').textContent = 'Status: OpenCV siap digunakan';
+      }
     }
   </script>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
   <style>
     body { 
       font-family: sans-serif; 
@@ -566,7 +573,8 @@
       if (typeof cv !== 'undefined' && cv.imread) {
         onOpenCvReady();
       } else {
-        setTimeout(checkOpenCV, 100);
+        setTimeout(checkOpenCV, 500);
+        console.log('Menunggu OpenCV...');
       }
     }
 
@@ -576,6 +584,14 @@
       initCamera();
       checkOpenCV();
     });
+
+    // Fallback if OpenCV fails to load
+    setTimeout(() => {
+      if (!opencvReady) {
+        document.getElementById('cekJawabanBtn').disabled = false;
+        updateStatus('OpenCV gagal dimuat. Anda bisa mencoba mengklik tombol.');
+      }
+    }, 10000);
   </script>
 </body>
 </html>
