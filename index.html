@@ -4,7 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deteksi Jawaban</title>
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+  <script>
+    function onOpenCvReady() {
+      console.log('OpenCV.js is ready');
+    }
+  </script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
   <style>
     body { 
       font-family: sans-serif; 
@@ -436,6 +441,10 @@
         visualizeDetection(visualizer, layoutKotak);
         
         // Process with OpenCV
+        if (!cv || !cv.imread) {
+          throw new Error('OpenCV tidak tersedia');
+        }
+        
         const src = cv.imread(canvas);
         const gray = new cv.Mat();
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
@@ -552,23 +561,21 @@
       console.log('OpenCV.js is ready');
     }
 
+    // Check if OpenCV is loaded
+    function checkOpenCV() {
+      if (typeof cv !== 'undefined' && cv.imread) {
+        onOpenCvReady();
+      } else {
+        setTimeout(checkOpenCV, 100);
+      }
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       updateKunciJawaban();
       initCamera();
+      checkOpenCV();
     });
-
-    // Wait for OpenCV to load
-    function waitForOpenCv() {
-      if (typeof cv !== 'undefined' && cv.imread) {
-        onOpenCvReady();
-      } else {
-        setTimeout(waitForOpenCv, 100);
-      }
-    }
-
-    // Start checking for OpenCV
-    waitForOpenCv();
   </script>
 </body>
 </html>
